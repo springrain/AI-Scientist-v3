@@ -266,6 +266,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+MODEL_LITERATURE_ENABLED=1
+configure_shared_model || exit $?
+
 if [ -n "$AGENT_MODEL" ]; then
   AGENT_MODEL_NORMALIZED="$(printf '%s' "$AGENT_MODEL" | tr '[:upper:]' '[:lower:]')"
   case "$AGENT_MODEL_NORMALIZED" in
@@ -789,25 +792,12 @@ if [ "$CONTAINERIZE" -eq 1 ]; then
   fi
 fi
 
-if [ -n "${GEMINI_API_KEY:-}" ] || { [ "$CONTAINERIZE" -eq 1 ] && [ -n "$CONTAINER_ENV_FILE" ] && env_file_has_nonempty_key "$CONTAINER_ENV_FILE" "GEMINI_API_KEY"; }; then
-  PAPER_GEMINI_API_KEY_AVAILABLE="true"
-  PAPER_GEMINI_API_KEY_CONTEXT="GEMINI_API_KEY is expected to be available as the automatic concept-figure fallback when OPENAI_API_KEY is unavailable. Do not claim it is unavailable unless you re-check inside the active workspace or process environment."
-else
-  PAPER_GEMINI_API_KEY_AVAILABLE="false"
-  PAPER_GEMINI_API_KEY_CONTEXT="GEMINI_API_KEY was not detected from the current shell or configured container env file before launch. This does not block the OpenAI backend or deterministic export."
-fi
-export PAPER_GEMINI_API_KEY_AVAILABLE
-export PAPER_GEMINI_API_KEY_CONTEXT
-
-if [ -n "${OPENAI_API_KEY:-}" ] || { [ "$CONTAINERIZE" -eq 1 ] && [ -n "$CONTAINER_ENV_FILE" ] && env_file_has_nonempty_key "$CONTAINER_ENV_FILE" "OPENAI_API_KEY"; }; then
-  PAPER_OPENAI_API_KEY_AVAILABLE="true"
-  PAPER_OPENAI_API_KEY_CONTEXT="OPENAI_API_KEY is expected to be available in this run environment. Do not claim it is unavailable unless you re-check inside the active workspace or process environment."
-else
-  PAPER_OPENAI_API_KEY_AVAILABLE="false"
-  PAPER_OPENAI_API_KEY_CONTEXT="OPENAI_API_KEY was not detected from the current shell or configured container env file before launch. The orchestrator will use Gemini when available or otherwise ship the deterministic export with --skip-enhance."
-fi
-export PAPER_OPENAI_API_KEY_AVAILABLE
-export PAPER_OPENAI_API_KEY_CONTEXT
+PAPER_OPENAI_API_KEY_AVAILABLE=false
+PAPER_OPENAI_API_KEY_CONTEXT="Concept-figure APIs are configured in configs/models.local.yaml; use the managed figure workflow."
+PAPER_GEMINI_API_KEY_AVAILABLE=false
+PAPER_GEMINI_API_KEY_CONTEXT="Use the configured figure endpoint. Do not inspect environment credentials."
+export PAPER_OPENAI_API_KEY_AVAILABLE PAPER_OPENAI_API_KEY_CONTEXT
+export PAPER_GEMINI_API_KEY_AVAILABLE PAPER_GEMINI_API_KEY_CONTEXT
 
 SELECTED_PAPER_SKILLS="$("$PYTHON_BIN" - "$REPO_ROOT" "$PAPER_SKILLS_CSV" "$PAPER_PROFILE" <<'PY'
 import sys

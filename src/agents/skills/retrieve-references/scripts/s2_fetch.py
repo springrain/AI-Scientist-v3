@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
+import sys
 import re
 import time
 import urllib.error
@@ -14,6 +14,9 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from literature_credentials import load_literature_settings
 
 BASE_URL = "https://api.semanticscholar.org/graph/v1"
 KEY_RE = re.compile(r"@\w+\{([^,]+),")
@@ -134,7 +137,7 @@ def main() -> int:
     if args.timeout_seconds <= 0:
         raise SystemExit("--timeout-seconds must be > 0")
 
-    api_key = os.environ.get("S2_API_KEY")
+    api_key = load_literature_settings()["s2_api_key"].strip() or None
     queries = normalize_queries(list(args.query))
     if not queries:
         raise SystemExit("At least one non-empty --query is required.")

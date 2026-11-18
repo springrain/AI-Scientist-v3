@@ -35,7 +35,7 @@ python scripts/openalex_fetch.py \
 ```
    Optional:
    - `--mailto you@example.com` to enter the OpenAlex polite pool
-   - Env fallback: `OPENALEX_EMAIL`
+   - OpenAlex credentials, default email, and full search endpoint come from `literature.openalex_api_key`, `literature.openalex_email`, and `literature.openalex_base_url` in `configs/models.local.yaml` (or the private copy staged by the paper launcher). Set the endpoint to `https://api.openalex.org/works`; it is used directly without appending a path. A non-empty key is sent as the `api_key` query parameter; do not put it in the endpoint or command arguments.
 4. Alternate path (Google Scholar API wrapper with `scholarly`):
 ```bash
 python -m pip install scholarly
@@ -56,7 +56,7 @@ python scripts/scholarly_fetch.py \
    - `--proxy-http <url>` / `--proxy-https <url>` for `single`
    - Env fallbacks: `SCHOLARLY_PROXY_MODE`, `SCHOLARLY_PROXY_HTTP`, `SCHOLARLY_PROXY_HTTPS`
    - Global `HTTP_PROXY` / `HTTPS_PROXY` are intentionally ignored to avoid accidental ambient proxying
-5. Require `S2_API_KEY` when available for `s2_fetch.py` (script reads env automatically).
+5. `s2_fetch.py` uses `literature.s2_api_key` from `configs/models.local.yaml` (or the private copy staged by the paper launcher). Do not set credentials through environment variables.
 6. Keep only references with valid BibTeX and citation key.
 7. Dedupe by citation key and paper id.
 8. Fail hard if references found `< min-refs`.

@@ -82,7 +82,7 @@ def load_posthoc_config(overrides: list[str] | None = None) -> PosthocPipelineCo
     logging_raw = cfg_dict.get("logging", {})
     run_id = cfg_dict.get("run_id") or _generate_run_id()
 
-    return PosthocPipelineConfig(
+    cfg = PosthocPipelineConfig(
         agent=AgentConfig(
             name=agent_raw.get("name", "claude"),
             model=agent_raw.get("model"),
@@ -124,6 +124,12 @@ def load_posthoc_config(overrides: list[str] | None = None) -> PosthocPipelineCo
         ),
         run_id=str(run_id),
     )
+
+    from src.model_config import bind_agent_config
+
+    bind_agent_config(cfg.agent)
+    cfg.container.env_file = ""
+    return cfg
 
 
 def _parse_cli_arguments(argv: list[str]) -> tuple[set[int] | None, list[str]]:

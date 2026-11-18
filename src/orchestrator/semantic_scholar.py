@@ -188,14 +188,12 @@ def utc_now() -> str:
 
 
 def resolve_s2_api_key(explicit_key: str | None = None) -> str | None:
-    """Resolve s2 api key."""
+    """Use configured credentials for host retrieval, with explicit call overrides."""
     if explicit_key:
         return explicit_key.strip() or None
-    env_key = os.environ.get("S2_API_KEY")
-    if env_key is None:
-        return None
-    env_key = env_key.strip()
-    return env_key or None
+    from src.model_config import load_literature_settings
+
+    return load_literature_settings()["s2_api_key"].strip() or None
 
 
 def semantic_scholar_key_forbidden_error(

@@ -217,7 +217,7 @@ def load_variants_config(
     container_raw = cfg_dict.get("container", {})
     logging_raw = cfg_dict.get("logging", {})
 
-    return VariantsPipelineConfig(
+    cfg = VariantsPipelineConfig(
         agent=AgentConfig(
             name=agent_raw.get("name", "claude"),
             model=agent_raw.get("model"),
@@ -271,6 +271,12 @@ def load_variants_config(
         ),
         run_id=cfg_dict.get("run_id", ""),
     )
+
+    from src.model_config import bind_agent_config
+
+    bind_agent_config(cfg.agent)
+    cfg.container.env_file = ""
+    return cfg
 
 
 if __name__ == "__main__":

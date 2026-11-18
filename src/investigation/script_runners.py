@@ -9,6 +9,7 @@ import selectors
 import secrets
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -1158,7 +1159,14 @@ def build_agent_command(
     agent_profile: str | None = None,
     reasoning_effort: str | None = None,
 ) -> list[str]:
-    """Build a pinned Headless command that references a staged prompt file."""
+    """Build a configured Headless command that references a staged prompt file."""
+    from src.model_config import REPO_ROOT, load_settings
+
+    settings = load_settings()
+    agent = settings["agent"]
+    agent_model = settings["model"]
+    agent_profile = None
+    reasoning_effort = settings.get("reasoning_effort")
     model = agent_model.strip() if isinstance(agent_model, str) else ""
     profile = agent_profile.strip() if isinstance(agent_profile, str) else ""
     if profile and agent != "codex":
@@ -1199,4 +1207,4 @@ def build_agent_command(
                 "then follow them exactly.",
             ]
         )
-    return cmd
+    return [sys.executable, str(REPO_ROOT / "src/model_config.py"), "launch", "--", *cmd]

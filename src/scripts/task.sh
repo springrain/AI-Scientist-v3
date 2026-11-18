@@ -192,6 +192,8 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+configure_shared_model || exit $?
 validate_agent_log_max_bytes "$AGENT_LOG_MAX_BYTES" || exit $?
 
 if [ -n "$AGENT_MODEL" ]; then

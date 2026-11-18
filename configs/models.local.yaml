@@ -1,0 +1,32 @@
+# Shared coding agent for all research phases. Put secrets and local overrides
+# in configs/models.local.yaml (ignored by Git). Values are literal, not env refs.
+agent: codex
+model: gpt-6.2-sol
+base_url: https://api.openai.com/v1
+# Native CODEX_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY are generated from this.
+api_key: ""
+reasoning_effort: high
+# Pi/OpenCode only: openai-completions, openai-responses, anthropic-messages.
+api: openai-responses
+
+# Optional literature services; empty credentials use anonymous access.
+literature:
+  s2_api_key: ""
+  openalex_api_key: ""
+  openalex_email: ""
+  # Full search endpoint; used directly without appending a path.
+  openalex_base_url: https://api.openalex.org/works
+
+# Optional final review: direct OpenAI compatible text API.
+review:
+  model: gpt-6.2-sol
+  base_url: https://api.openai.com/v1
+  api_key: ""
+
+# Optional concept-figure enhancement and vision audits: OpenAI compatible API.
+figures:
+  enabled: false
+  model: gpt-image-2
+  audit_model: gpt-6.2-sol
+  base_url: https://api.openai.com/v1
+  api_key: ""

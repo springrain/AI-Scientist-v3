@@ -1,4 +1,4 @@
-"""Container auth seeding: seed_auth_into_home, ChatGPT subscription bridging, pi catalog, image pins."""
+"""Container auth seeding, ChatGPT subscription bridging, pi catalog, and image CLIs."""
 
 from __future__ import annotations
 
@@ -360,11 +360,11 @@ def test_rejects_unsafe_or_insufficient_codex_auth_and_keeps_fixed_launch_deadli
 
 
 # ---------------------------------------------------------------------------
-# pi model catalog / agent-cli image pins
+# pi model catalog / agent-cli image packages
 # ---------------------------------------------------------------------------
 
 
-def test_catalog_models_and_agent_cli_image_pins() -> None:
+def test_catalog_models_and_agent_cli_image_packages() -> None:
     # catalog registers global bedrock opus 5
     [model] = json.loads(CATALOG.read_text(encoding="utf-8"))["providers"]["amazon-bedrock"]["models"]
     assert model["id"] == "global.anthropic.claude-opus-5"
@@ -382,12 +382,21 @@ def test_catalog_models_and_agent_cli_image_pins() -> None:
     assert model["reasoning"] is True
     assert model["contextWindow"] == 272_000
     assert model["maxTokens"] == 128_000
-    # agent-cli dependencies are reproducibly pinned
+    # agent CLIs follow the npm latest tag without version pins
     dockerfile = DOCKERFILE.read_text(encoding="utf-8")
-    for pin in (
-        "@openai/codex@0.153.4",
-        "@anthropic-ai/claude-code@2.1.285",
-        "@earendil-works/pi-coding-agent@0.85.1",
-        "opencode-ai@1.18.29",
+    install_commands = [
+        shlex.split(line)
+        for line in dockerfile.replace("\\\n", " ").splitlines()
+        if "npm install -g" in line
+    ]
+    for package in (
+        "@openai/codex",
+        "@anthropic-ai/claude-code",
+        "@google/gemini-cli",
+        "@earendil-works/pi-coding-agent",
+        "opencode-ai",
     ):
-        assert pin in dockerfile
+        assert any(package in command for command in install_commands), package
+        assert not any(
+            token.startswith(f"{package}@") for command in install_commands for token in command
+        ), package

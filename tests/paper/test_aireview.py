@@ -67,6 +67,36 @@ def _client_for_response(response: SimpleNamespace) -> SimpleNamespace:
     return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **kwargs: response)))
 
 
+def test_review_uses_file_endpoint_key_and_model(
+    aireview: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src import model_config
+    import yaml
+
+    data = model_config.load_settings()
+    data["review"].update(model="custom-review", api_key="file-secret", base_url="http://localhost:1234/v1")
+    path = tmp_path / "models.local.yaml"
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    monkeypatch.setattr(model_config, "DEFAULT_CONFIG", path)
+    monkeypatch.setenv("OPENAI_API_KEY", "wrong")
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://wrong.example")
+    monkeypatch.setattr(aireview, "load_paper", lambda path: "paper text")
+    calls = {}
+
+    def client(**kwargs):
+        calls.update(kwargs)
+        return "client"
+
+    def review(text, *, client, model):
+        assert (text, client, model) == ("paper text", "client", "custom-review")
+        return {"review": "ok"}
+
+    monkeypatch.setattr(aireview, "OpenAI", client)
+    monkeypatch.setattr(aireview, "review_text", review)
+    assert aireview.review_pdf(tmp_path / "paper.pdf") == {"review": "ok"}
+    assert calls == {"api_key": "file-secret", "base_url": "http://localhost:1234/v1"}
+
+
 def _messages(call: dict[str, object]) -> list[dict[str, str]]:
     return cast(list[dict[str, str]], call["messages"])
 

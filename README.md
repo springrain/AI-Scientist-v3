@@ -44,6 +44,17 @@ If the build cannot reach package mirrors, add `--network=host` to the
 > workstation, only run tasks and sources you trust, and review run directories
 > before sharing them: agent logs can echo document contents and paths.
 
+### Model configuration
+
+All research phases share the agent in [configs/models.local.yaml](configs/models.local.yaml).
+Set `agent`, `model`, `base_url`, and `api_key` in that file.
+It also configures the optional review and figure APIs;
+`.env`, provider environment variables, and existing CLI logins are not used for
+model configuration. See [Model configuration](docs/model_configuration.md).
+
+Literature service credentials and the OpenAlex API address are configured in
+the same file under `literature`.
+
 ### Prerequisites
 
 - **Python ≥ 3.11 with [uv](https://docs.astral.sh/uv/)**. `uv sync` creates
@@ -55,9 +66,8 @@ If the build cannot reach package mirrors, add `--network=host` to the
   source .venv/bin/activate
   ```
 
-- **API keys** in a `.env` file at the repo root (`ANTHROPIC_API_KEY`,
-  `OPENAI_API_KEY`, `GEMINI_API_KEY`, ... whichever your agent
-  needs). The pipeline mounts it into the agent containers. Never commit it.
+- **API credentials** in `configs/models.local.yaml`; see the shared model
+  configuration above.
 - **Agent CLIs** are already inside the image. For native (non-containerized)
   runs, install the CLI of the agent you use plus Git and Node.js; versions and
   commands are in [docs/install.md](docs/install.md).
@@ -89,8 +99,8 @@ run --help` lists them all.
 > **Note** — Agentic Scientist drives `claude`, `codex`, `cursor`, `opencode`,
 > `gemini`, and `pi` through
 > [Headless CLI](https://github.com/RobertTLange/headless-cli), so the same
-> experiment can be repeated across agents and models: pick one with
-> `agent.name=<agent> agent.model=<model>`.
+> experiment can be repeated across agents and models: set `agent` and `model`
+> in `configs/models.local.yaml`.
 
 Task drafting only writes a scaffold when the task directory has none; every
 shipped example already includes its evaluator, so the drafting phase only
@@ -121,27 +131,27 @@ Browse any run in the browser with `agsci inspect start`
 ## Recommended starting setup
 
 The default configuration is the one to start with: the `claude` agent, every
-phase in Docker, and the CPU-only `examples/circpack` task. It needs a Claude
-login, no GPUs, and exercises every phase through to a compiled paper.
+phase in Docker, and the CPU-only `examples/circpack` task. Configure an API key
+in `configs/models.local.yaml`; no GPUs are required.
 
 1. **Build the image and the Python environment** as described in
    [Install](#install).
 
-2. **Create `.env` at the repo root.** Only the selected agent's keys are
-   forwarded into its containers:
+2. **Edit `configs/models.local.yaml`.** Update the shared agent fields below,
+   keeping the file's `api`, `literature`, `review`, and `figures` settings:
 
-   ```bash
-   CLAUDE_CODE_OAUTH_TOKEN=...   # claude, billed to your Claude subscription (ANTHROPIC_API_KEY for pay-per-token)
-   OPENAI_API_KEY=...            # recommended: concept figures in the paper and the `review` phase
+   ```yaml
+   agent: claude
+   model: claude-opus-4-6
+   base_url: https://api.anthropic.com
+   api_key: your-api-key
    ```
 
-   Other agents: `codex` reads `OPENAI_API_KEY` or `CODEX_API_KEY`, `gemini`
-   reads `GEMINI_API_KEY`, `cursor` reads `CURSOR_API_KEY`, and Bedrock-backed
-   Claude reads the `AWS_*` variables. Concept figures use `OPENAI_API_KEY`,
-   fall back to `GEMINI_API_KEY`, and otherwise ship a plain export.
+   Optional reviewer and concept-figure API settings go in the same file; see
+   [Model configuration](docs/model_configuration.md).
 
 3. **Export host variables only if you need them.** Everything else (host
-   networking, the image, the `.env` mount) is already the `agsci run` default:
+   networking and the image) is already the `agsci run` default:
 
    ```bash
    export AGENTIC_TEMP_ROOT=/path/to/scratch       # existing writable dir on a large disk; default: $TMPDIR, /mnt/localssd, or /tmp
@@ -217,7 +227,7 @@ agsci run examples/circpack paper.paper_format=iclr \
 ```
 
 The same reviewer runs standalone on any PDF with `agsci review`. It reads
-`OPENAI_API_KEY` from the environment or the repo `.env` and prints the review
+the `review` section from the shared model configuration and prints the review
 JSON:
 
 ```bash

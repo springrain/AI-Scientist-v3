@@ -227,6 +227,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+configure_shared_model || exit $?
+
 if [ -n "$AGENT_MODEL" ]; then
   AGENT_MODEL_NORMALIZED="$(printf '%s' "$AGENT_MODEL" | tr '[:upper:]' '[:lower:]')"
   case "$AGENT_MODEL_NORMALIZED" in

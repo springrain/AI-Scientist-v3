@@ -13,6 +13,55 @@ source "$CONTAINER_AGENT_LIB_DIR/python_bin.sh"
 PYTHON_BIN="$(resolve_python_bin)"
 WRAPPER_PYTHON="$PYTHON_BIN"
 export WRAPPER_PYTHON
+MODEL_CONFIG_HELPER="$CONTAINER_AGENT_LIB_DIR/../../model_config.py"
+
+configure_shared_model() {
+  local assignments
+  assignments="$("$PYTHON_BIN" "$MODEL_CONFIG_HELPER" shell)" || return $?
+  # Only public, shlex-quoted model metadata is emitted by the helper.
+  eval "$assignments"
+  AGENT_FILE_CONFIGURED=1
+  CONTAINER_ENV_FILE=""
+  CONTAINER_ENV_FILE_SET=x
+}
+
+wrap_configured_model_command() {
+  local use_container="$1" agent_home="$2" figures="${3:-0}"
+  local runtime_dir runtime_path interpreter
+  MODEL_RUNTIME_TEMP_DIR=""
+  if [ "$use_container" = "1" ]; then
+    runtime_dir="$agent_home/.model_config"
+    runtime_path=/home/agent-home/.model_config
+    interpreter=python3
+  else
+    MODEL_RUNTIME_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/model-config-XXXXXX")" || return $?
+    runtime_dir="$MODEL_RUNTIME_TEMP_DIR"
+    runtime_path="$runtime_dir"
+    interpreter="$PYTHON_BIN"
+  fi
+  local stage_rc=0
+  local -a stage_command=("$PYTHON_BIN" "$MODEL_CONFIG_HELPER" stage --directory "$runtime_dir")
+  [ "$figures" = "1" ] && stage_command+=(--figures)
+  if [ "${MODEL_LITERATURE_ENABLED:-0}" = "1" ] && [ "$figures" != "1" ]; then
+    stage_command+=(--literature)
+  fi
+  "${stage_command[@]}" || stage_rc=$?
+  if [ "$stage_rc" -ne 0 ]; then
+    cleanup_model_runtime
+    return "$stage_rc"
+  fi
+  local -a prefix=("$interpreter" "$runtime_path/runtime.py" run --config "$runtime_path/config.json")
+  [ "$figures" = "1" ] && prefix+=(--figures)
+  AGENT_INNER_CMD=("${prefix[@]}" -- "${AGENT_INNER_CMD[@]}")
+}
+
+cleanup_model_runtime() {
+  if [ -n "${MODEL_RUNTIME_TEMP_DIR:-}" ]; then
+    rm -f -- "$MODEL_RUNTIME_TEMP_DIR/config.json" "$MODEL_RUNTIME_TEMP_DIR/runtime.py"
+    rmdir -- "$MODEL_RUNTIME_TEMP_DIR"
+    MODEL_RUNTIME_TEMP_DIR=""
+  fi
+}
 AGENT_LOG_MIN_BYTES=1024
 AGENT_LOG_MAX_ALLOWED_BYTES=1073741824
 
@@ -140,6 +189,7 @@ validate_agent_reasoning_effort() {
 }
 
 chatgpt_subscription_enabled() {
+  [ "${AGENT_FILE_CONFIGURED:-0}" = "1" ] && return 1
   case "${AGENT_CHATGPT_SUBSCRIPTION:-0}" in
     1|true|TRUE|yes|YES|y|Y) return 0 ;;
     *) return 1 ;;
@@ -811,6 +861,7 @@ agent_config_rel_dir() {
 
 seed_paths_for_agent() {
   local agent="$1"
+  [ "${AGENT_FILE_CONFIGURED:-0}" = "1" ] && return 0
   case "$agent" in
     codex)
       cat <<'EOF'
@@ -907,6 +958,7 @@ seed_auth_into_home() {
 }
 
 seed_managed_agent_files() {
+  [ "${AGENT_FILE_CONFIGURED:-0}" = "1" ] && return 0
   local agent="$1"
   local auth_root="$2"
   local home_dir="$3"
@@ -1356,12 +1408,18 @@ run_agent_prompt() {
   container_mount_root="$container_mount_root_arg"
 
   build_agent_inner_command "$agent" "$prompt" "$agent_model" "$agent_profile" "$use_container"
+  if [ "${AGENT_FILE_CONFIGURED:-0}" = "1" ]; then
+    wrap_configured_model_command "$use_container" "$container_home_dir" || return $?
+  fi
 
+  local command_rc=0
   _dispatch_inner_command \
     "$agent" "$work_dir" "$use_container" "$container_image" \
     "$container_network" "$container_home_dir" "$container_env_file" \
     "$container_mount_root" "$container_session_name" \
-    "$subscription_extra_allowed_env_keys"
+    "$subscription_extra_allowed_env_keys" || command_rc=$?
+  cleanup_model_runtime
+  return "$command_rc"
 }
 
 # Dispatch a prepared AGENT_INNER_CMD either inside the agent container or
@@ -1720,9 +1778,15 @@ run_command_prompt() {
   fi
 
   AGENT_INNER_CMD=(bash -lc "$command")
+  if [ "${AGENT_FILE_CONFIGURED:-0}" = "1" ]; then
+    wrap_configured_model_command "$use_container" "$container_home_dir" 1 || return $?
+  fi
 
+  local command_rc=0
   _dispatch_inner_command \
     "$agent" "$work_dir" "$use_container" "$container_image" \
     "$container_network" "$container_home_dir" "$container_env_file" \
-    "$container_mount_root" "$container_session_name"
+    "$container_mount_root" "$container_session_name" || command_rc=$?
+  cleanup_model_runtime
+  return "$command_rc"
 }

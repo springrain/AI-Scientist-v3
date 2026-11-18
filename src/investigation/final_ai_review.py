@@ -201,17 +201,15 @@ def final_ai_review_environment(
     *,
     env_file: Path | None = None,
 ) -> dict[str, str]:
-    """Keep approved runtime values and load only OpenAI settings from an env file."""
+    """Keep runtime settings; reviewer models and keys come from YAML."""
+    from src.model_config import clean_environment
+
     selected = {
         key: value
         for key, value in environment.items()
         if key in _ENVIRONMENT_ALLOWLIST or _UV_INDEX_CREDENTIAL_PATTERN.fullmatch(key)
     }
-    if env_file is not None and not selected.get("OPENAI_API_KEY"):
-        for key, value in _openai_environment_from_file(env_file).items():
-            if not selected.get(key):
-                selected[key] = value
-    return selected
+    return clean_environment(selected)
 
 
 def _read_paper_manifest_at(paper_root_fd: int) -> dict[str, object]:

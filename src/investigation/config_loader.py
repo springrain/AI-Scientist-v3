@@ -124,6 +124,10 @@ def load_config(overrides: list[str] | None = None) -> InvestigationConfig:
         {str(k): v for k, v in hydra_cfg.items()} if isinstance(hydra_cfg, dict) else {}
     )
 
+    from src.model_config import bind_agent_config
+
+    bind_agent_config(cfg.agent)
+    cfg.container.env_file = ""
     validate(cfg)
     resolve_defaults(cfg)
     cfg.hydra_runtime_config = _build_hydra_runtime_config(cfg, config_dir)

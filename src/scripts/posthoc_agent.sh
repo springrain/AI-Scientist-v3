@@ -116,6 +116,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+configure_shared_model || exit $?
+
 validate_agent_reasoning_effort "$AGENT" "$AGENT_REASONING_EFFORT" || exit 1
 export AGENT_REASONING_EFFORT
 if [ -z "$WORK_DIR" ]; then

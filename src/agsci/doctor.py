@@ -361,38 +361,19 @@ def check_selected_agent_cli(host: Host, cfg: PipelineConfig) -> CheckResult:
 
 
 def check_selected_credentials(host: Host, cfg: PipelineConfig) -> CheckResult:
-    agent = cfg.agent.name
-    names = AGENT_CREDENTIAL_ENV.get(agent)
-    if names is None:
-        return CheckResult("credentials", WARN, f"unknown agent {agent!r}; skipped")
-    env_file = _env_file_path(host, cfg)
-    available = {name for name in names if host.environ.get(name)}
-    if env_file is not None and env_file.is_file():
-        available |= _dotenv_names(env_file) & set(names)
-    if available:
-        found = ", ".join(name for name in names if name in available)
-        return CheckResult("credentials", OK, f"{agent}: {found}")
-    if agent == "codex":
-        auth_dir = Path(str(cfg.container.auth_root)).expanduser() / ".codex"
-        if auth_dir.is_dir():
-            return CheckResult("credentials", OK, f"codex: subscription login under {auth_dir}")
-        return CheckResult(
-            "credentials",
-            WARN,
-            "codex: no API key and no ~/.codex login",
-            hint="run `codex login`, or set CODEX_API_KEY or OPENAI_API_KEY",
-        )
-    if not names:
-        return CheckResult(
-            "credentials", WARN, f"{agent}: provider-dependent; verify its credentials manually"
-        )
-    source = "environment or env file" if env_file is not None else "environment"
-    return CheckResult(
-        "credentials",
-        WARN,
-        f"{agent}: nothing set in the {source}",
-        hint="set one of: " + ", ".join(names),
-    )
+    from src.model_config import load_settings, validate_connection
+
+    try:
+        data = load_settings()
+        validate_connection(data)
+        phases = set(cfg.execution.phases.split(","))
+        if phases & {"review", "revision"}:
+            validate_connection(data["review"])
+        if data["figures"]["enabled"] and phases & {"paper", "revision"}:
+            validate_connection(data["figures"])
+    except (OSError, ValueError) as exc:
+        return CheckResult("credentials", FAIL, str(exc), hint="edit configs/models.local.yaml")
+    return CheckResult("credentials", OK, "model credentials configured in YAML")
 
 
 def check_auth_root(cfg: PipelineConfig) -> CheckResult:

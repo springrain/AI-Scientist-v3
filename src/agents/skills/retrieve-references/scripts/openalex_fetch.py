@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import unicodedata
 import urllib.parse
@@ -15,7 +14,8 @@ from pathlib import Path
 from typing import Any
 
 
-OPENALEX_WORKS_URL = "https://api.openalex.org/works"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from literature_credentials import load_literature_settings
 
 
 def utc_now() -> str:
@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--search-limit", type=int, default=10, help="Maximum OpenAlex results per query.")
     parser.add_argument(
         "--mailto",
-        default=os.getenv("OPENALEX_EMAIL"),
+        default=load_literature_settings()["openalex_email"] or None,
         help="Contact email for OpenAlex polite pool.",
     )
     parser.add_argument(
@@ -53,7 +53,7 @@ def fetch_json(url: str) -> dict[str, Any]:
     with urllib.request.urlopen(req, timeout=30) as response:
         payload = json.loads(response.read().decode("utf-8"))
     if not isinstance(payload, dict):
-        raise SystemExit(f"Expected JSON object from {url}")
+        raise SystemExit("Expected JSON object from OpenAlex")
     return payload
 
 
@@ -77,10 +77,15 @@ def normalize_queries(values: list[str]) -> list[str]:
 
 def search_openalex(query: str, *, limit: int, mailto: str | None) -> list[dict[str, Any]]:
     """Search OpenAlex works."""
+    settings = load_literature_settings()
     params = {"search": query, "per-page": str(limit)}
+    api_key = settings["openalex_api_key"].strip()
+    if api_key:
+        params["api_key"] = api_key
     if mailto:
         params["mailto"] = mailto
-    payload = fetch_json(f"{OPENALEX_WORKS_URL}?{urllib.parse.urlencode(params)}")
+    works_url = settings["openalex_base_url"]
+    payload = fetch_json(f"{works_url}?{urllib.parse.urlencode(params)}")
     results = payload.get("results")
     if not isinstance(results, list):
         return []

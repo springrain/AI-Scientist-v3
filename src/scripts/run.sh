@@ -201,6 +201,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+configure_shared_model || exit $?
+
 if [ "$GPU_EVALUATION" -eq 1 ] && [ "$HARNESS_EVALUATED_ATTEMPT" -ne 1 ]; then
   echo "--gpu-evaluation requires --harness-evaluated-attempt" >&2
   exit 1

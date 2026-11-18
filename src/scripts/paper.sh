@@ -235,6 +235,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+MODEL_LITERATURE_ENABLED=1
+configure_shared_model || exit $?
+
 if [ -n "$AGENT_MODEL" ]; then
   AGENT_MODEL_NORMALIZED="$(printf '%s' "$AGENT_MODEL" | tr '[:upper:]' '[:lower:]')"
   case "$AGENT_MODEL_NORMALIZED" in
@@ -309,31 +312,7 @@ fi
 if [ "$CONTAINER_ENV_FILE_SET" != x ] && [ -f "$REPO_ROOT/.env" ]; then
   CONTAINER_ENV_FILE="$REPO_ROOT/.env"
 fi
-# Reference retrieval runs on the host, not inside the agent container, so the
-# container env-file never reaches it. Export just the retrieval credentials from
-# that file when the caller has not already set them; every other secret in the
-# env-file deliberately stays out of the host environment.
-load_host_reference_credentials() {
-  local env_file="$1"
-  local name value
-  if [ -z "$env_file" ] || [ ! -f "$env_file" ]; then
-    return 0
-  fi
-  for name in S2_API_KEY OPENALEX_EMAIL; do
-    if [ -n "${!name:-}" ]; then
-      continue
-    fi
-    value="$(sed -n "s/^[[:space:]]*\(export[[:space:]]\+\)\?${name}=//p" "$env_file" | tail -n 1)"
-    value="${value%\"}"
-    value="${value#\"}"
-    value="${value%\'}"
-    value="${value#\'}"
-    if [ -n "$value" ]; then
-      export "$name=$value"
-    fi
-  done
-}
-load_host_reference_credentials "$CONTAINER_ENV_FILE"
+# Host reference retrieval reads the literature section of models.local.yaml directly.
 
 if [ -z "$CONTRIBUTIONS_SOURCE_PATH" ] && [ -f "$REPO_ROOT/contributions.md" ]; then
   CONTRIBUTIONS_SOURCE_PATH="$REPO_ROOT/contributions.md"
@@ -531,27 +510,12 @@ trap paper_event_early_exit EXIT
 
 # OpenAI is the default concept-figure backend. Gemini is selected automatically
 # when only GEMINI_API_KEY is available; without either key, enhancement is skipped.
-if [ -n "${OPENAI_API_KEY:-}" ] || { [ "$CONTAINERIZE" -eq 1 ] && [ -n "$CONTAINER_ENV_FILE" ] && env_file_has_nonempty_key "$CONTAINER_ENV_FILE" "OPENAI_API_KEY"; }; then
-  PAPER_OPENAI_API_KEY_AVAILABLE="true"
-  PAPER_OPENAI_API_KEY_CONTEXT="OPENAI_API_KEY is expected to be available in this run environment. Do not claim it is unavailable unless you re-check inside the active workspace or process environment."
-else
-  PAPER_OPENAI_API_KEY_AVAILABLE="false"
-  PAPER_OPENAI_API_KEY_CONTEXT="OPENAI_API_KEY was not detected from the current shell or configured container env file before launch. Re-check inside the active workspace or process environment before deciding it is unavailable; the orchestrator will use Gemini when available or otherwise ship the deterministic export with --skip-enhance."
-fi
-export PAPER_OPENAI_API_KEY_AVAILABLE
-export PAPER_OPENAI_API_KEY_CONTEXT
-
-# GEMINI_API_KEY provides the automatic enhancement and audit fallback when
-# OPENAI_API_KEY is unavailable; a missing key never blocks deterministic export.
-if [ -n "${GEMINI_API_KEY:-}" ] || { [ "$CONTAINERIZE" -eq 1 ] && [ -n "$CONTAINER_ENV_FILE" ] && env_file_has_nonempty_key "$CONTAINER_ENV_FILE" "GEMINI_API_KEY"; }; then
-  PAPER_GEMINI_API_KEY_AVAILABLE="true"
-  PAPER_GEMINI_API_KEY_CONTEXT="GEMINI_API_KEY is available as the automatic concept-figure fallback when OPENAI_API_KEY is unavailable."
-else
-  PAPER_GEMINI_API_KEY_AVAILABLE="false"
-  PAPER_GEMINI_API_KEY_CONTEXT="GEMINI_API_KEY was not detected before launch. This is not a blocker: OpenAI remains the default, and a no-key run can still ship the deterministic export."
-fi
-export PAPER_GEMINI_API_KEY_AVAILABLE
-export PAPER_GEMINI_API_KEY_CONTEXT
+PAPER_OPENAI_API_KEY_AVAILABLE=false
+PAPER_OPENAI_API_KEY_CONTEXT="Concept-figure APIs are configured in configs/models.local.yaml; use the managed figure workflow."
+PAPER_GEMINI_API_KEY_AVAILABLE=false
+PAPER_GEMINI_API_KEY_CONTEXT="Use the configured figure endpoint. Do not inspect environment credentials."
+export PAPER_OPENAI_API_KEY_AVAILABLE PAPER_OPENAI_API_KEY_CONTEXT
+export PAPER_GEMINI_API_KEY_AVAILABLE PAPER_GEMINI_API_KEY_CONTEXT
 
 SELECTED_PAPER_SKILLS="$("$PYTHON_BIN" - "$REPO_ROOT" "$PAPER_SKILLS_CSV" "$PAPER_PROFILE" <<'PY'
 import sys
@@ -2424,9 +2388,9 @@ PY
 
 run_reference_retrieval_with_log() {
   : > "$REFERENCE_RETRIEVAL_LOG_FILE"
-  printf '[paper.sh] reference providers: semantic_scholar=%s openalex=%s\n' \
-    "$([ -n "${S2_API_KEY:-}" ] && printf keyed || printf anonymous)" \
-    "$([ -n "${OPENALEX_EMAIL:-}" ] && printf polite-pool || printf anonymous)" \
+  local provider_status
+  provider_status="$("$PYTHON_BIN" "$MODEL_CONFIG_HELPER" literature-status)" || return $?
+  printf '[paper.sh] reference providers: %s\n' "$provider_status" \
     | tee -a "$REFERENCE_RETRIEVAL_LOG_FILE"
   set +e
   retrieve_references_from_plan "$OUTPUT_DIR/reference_query_plan.json" 2>&1 | tee "$REFERENCE_RETRIEVAL_LOG_FILE"

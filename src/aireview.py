@@ -8,6 +8,7 @@
 #   "pymupdf>=1.26,<2",
 #   "pymupdf4llm>=0.2,<1",
 #   "pypdf>=5,<7",
+#   "PyYAML>=6,<7",
 # ]
 # ///
 """Standalone implementation of The AI Scientist's Automated Reviewer."""
@@ -33,10 +34,13 @@ import pymupdf
 from openai import OpenAI
 from pypdf import PdfReader
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from src.model_config import load_settings, validate_connection
+
 with contextlib.redirect_stdout(io.StringIO()):
     import pymupdf4llm
 
-MODEL = "o4-mini-2025-04-16"
+MODEL = load_settings()["review"]["model"]
 REVIEWER_COUNT = 5
 REVIEW_ATTEMPTS = 2
 MAX_COMPLETION_TOKENS = 16384
@@ -333,6 +337,7 @@ def _record_review_cost(
     *,
     stage: str,
     failed: bool = False,
+    model: str = MODEL,
 ) -> None:
     try:
         repo_root = str(Path(__file__).resolve().parents[1])
@@ -340,7 +345,7 @@ def _record_review_cost(
             sys.path.insert(0, repo_root)
         from src.investigation.ai_review_cost import record_review_api_cost
 
-        record_review_api_cost(response, stage=stage, model=MODEL, failed=failed)
+        record_review_api_cost(response, stage=stage, model=model, failed=failed)
     except Exception as exc:
         print(f"[cost] warning: accounting unavailable ({type(exc).__name__})", file=sys.stderr)
 
@@ -357,10 +362,11 @@ def _get_response(
     client: Any,
     cost_stage: str = "review",
     seed: int = 0,
+    model: str = MODEL,
 ) -> str:
     try:
         response = client.chat.completions.create(
-            model=MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": prompt},
@@ -371,9 +377,9 @@ def _get_response(
             max_completion_tokens=MAX_COMPLETION_TOKENS,
         )
     except Exception:
-        _record_review_cost(None, stage=cost_stage, failed=True)
+        _record_review_cost(None, stage=cost_stage, failed=True, model=model)
         raise
-    _record_review_cost(response, stage=cost_stage)
+    _record_review_cost(response, stage=cost_stage, model=model)
     content = response.choices[0].message.content
     if not isinstance(content, str) or not content.strip():
         raise InvalidReviewOutputError("OpenAI returned an empty response")
@@ -411,6 +417,7 @@ def _request_valid_review(
     client: Any,
     cost_stage: str,
     context: str,
+    model: str = MODEL,
 ) -> dict[str, Any]:
     for attempt in range(REVIEW_ATTEMPTS):
         try:
@@ -420,6 +427,7 @@ def _request_valid_review(
                 client=client,
                 cost_stage=cost_stage,
                 seed=attempt,
+                model=model,
             )
             return _validate_review(extract_json_between_markers(response), context=context)
         except InvalidReviewOutputError:
@@ -433,7 +441,7 @@ def _request_valid_review(
     raise AssertionError("review attempt loop did not return or raise")
 
 
-def _review_text_once(text: str, *, client: Any) -> dict[str, Any]:
+def _review_text_once(text: str, *, client: Any, model: str = MODEL) -> dict[str, Any]:
     """Run one complete five-reviewer and meta-review ensemble."""
     prompt = _review_prompt(text)
     reviews = []
@@ -446,6 +454,7 @@ def _review_text_once(text: str, *, client: Any) -> dict[str, Any]:
                 client=client,
                 cost_stage=f"reviewer_{reviewer_number}",
                 context=f"review {reviewer_number}",
+                model=model,
             )
         )
 
@@ -455,17 +464,18 @@ def _review_text_once(text: str, *, client: Any) -> dict[str, Any]:
         client=client,
         cost_stage="meta_review",
         context="meta-review",
+        model=model,
     )
     for score in _SCORE_RANGES:
         meta_review[score] = int(round(np.mean([review[score] for review in reviews])))
     return meta_review
 
 
-def review_text(text: str, *, client: Any) -> dict[str, Any]:
+def review_text(text: str, *, client: Any, model: str = MODEL) -> dict[str, Any]:
     """Review manuscript text, retrying only malformed reviewer outputs."""
     if len(text) < MIN_PAPER_CHARS:
         raise ValueError(f"paper text must contain at least {MIN_PAPER_CHARS} characters")
-    return _review_text_once(text, client=client)
+    return _review_text_once(text, client=client, model=model)
 
 
 def _validated_pdf_path(pdf_path: str | Path) -> Path:
@@ -506,12 +516,11 @@ def load_paper(pdf_path: str | Path) -> str:
 def review_pdf(pdf_path: str | Path, *, client: Any | None = None) -> dict[str, Any]:
     """Review a PDF with the paper's final Automated Reviewer configuration."""
     paper_text = load_paper(pdf_path)
+    connection = load_settings()["review"]
     if client is None:
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY is not configured")
-        client = OpenAI(api_key=api_key)
-    return review_text(paper_text, client=client)
+        validate_connection(connection)
+        client = OpenAI(api_key=connection["api_key"], base_url=connection["base_url"])
+    return review_text(paper_text, client=client, model=connection["model"])
 
 
 def _write_json_atomic(path: Path, payload: str) -> None:

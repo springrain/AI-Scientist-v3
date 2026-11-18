@@ -1,5 +1,11 @@
 # Usage Guide
 
+Model settings come from `configs/models.local.yaml` by default.
+All stages share the configured coding agent.
+Legacy `agent.*` selections and environment credentials in older examples are
+superseded by this file. See [Model configuration](model_configuration.md) for
+`agent`, `model`, `base_url`, `api_key`, review, and figure settings.
+
 ## What `agsci investigate` does
 
 `agsci investigate` (`src/investigation/cli.py`) runs the outer loop:

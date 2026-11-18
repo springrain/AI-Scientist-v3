@@ -596,72 +596,19 @@ concept_figure_secret_available() {
 }
 
 select_concept_figure_backend() {
-  CONCEPT_FIGURE_BACKEND_FLAGS=""
+  CONCEPT_FIGURE_BACKEND_FLAGS="$("$PYTHON_BIN" "$MODEL_CONFIG_HELPER" figures)" || return $?
+  if [[ "$CONCEPT_FIGURE_BACKEND_FLAGS" == --skip-enhance* ]]; then
+    # Light mode also skips the independent verify VLM in Autoillustrate.
+    CONCEPT_FIGURE_MODE_FLAGS="--mode light"
+  fi
   CONCEPT_FIGURE_SECRET_KEYS=""
   CONCEPT_FIGURE_RUNTIME_CONFIG_KEYS=""
-  CONCEPT_FIGURE_SEED_AGENT_AUTH=1
-  if concept_figure_secret_available \
-    OPENAI_API_KEY "${PAPER_OPENAI_API_KEY_AVAILABLE:-false}"; then
-    CONCEPT_FIGURE_BACKEND_FLAGS="--enhance-model gpt-image-2 --audit-vlm gpt-5.5 --unit-test-vlm openai-single"
-    add_concept_figure_secret_key "OPENAI_API_KEY"
-    concept_figure_log "using OpenAI for concept-figure enhancement and audits"
-  elif concept_figure_secret_available \
-    GEMINI_API_KEY "${PAPER_GEMINI_API_KEY_AVAILABLE:-false}"; then
-    CONCEPT_FIGURE_BACKEND_FLAGS="--enhance-model nanobanana-pro --audit-vlm gemini-3.1-pro --unit-test-vlm gemini-single"
-    add_concept_figure_secret_key "GEMINI_API_KEY"
-    concept_figure_log "OPENAI_API_KEY unavailable; using Gemini for concept-figure enhancement and audits"
-  else
-    CONCEPT_FIGURE_BACKEND_FLAGS="--skip-enhance --panel-inspects 0"
-    concept_figure_log "no concept-figure VLM key available; using deterministic export (--skip-enhance)"
-  fi
-
-  case "$AGENT" in
-    claude)
-      add_concept_figure_runtime_key "HEADLESS_BILLING"
-      add_concept_figure_aws_credentials
-      add_concept_figure_runtime_key "CLAUDE_CODE_USE_BEDROCK"
-      add_concept_figure_secret_key "ANTHROPIC_API_KEY"
-      add_concept_figure_secret_key "ANTHROPIC_AUTH_TOKEN"
-      add_concept_figure_secret_key "CLAUDE_CODE_OAUTH_TOKEN"
-      ;;
-    cursor)
-      add_concept_figure_secret_key "CURSOR_API_KEY"
-      add_concept_figure_runtime_key "CURSOR_CLI_BIN"
-      ;;
-    codex)
-      add_concept_figure_runtime_key "HEADLESS_BILLING"
-      add_concept_figure_runtime_key "HEADLESS_CAPACITY_RETRIES"
-      add_concept_figure_secret_key "CODEX_API_KEY"
-      add_concept_figure_secret_key "OPENAI_API_KEY"
-      ;;
-    gemini) add_concept_figure_secret_key "GEMINI_API_KEY" ;;
-    opencode)
-      CONCEPT_FIGURE_SEED_AGENT_AUTH=0
-      case "$(concept_figure_setting PAPER_CONCEPT_FIGURE_AGENT_PROVIDER)" in
-        anthropic) add_concept_figure_secret_key "ANTHROPIC_API_KEY" ;;
-        gemini|google) add_concept_figure_secret_key "GEMINI_API_KEY" ;;
-        openai) add_concept_figure_secret_key "OPENAI_API_KEY" ;;
-      esac
-      ;;
-    pi)
-      CONCEPT_FIGURE_SEED_AGENT_AUTH=0
-      add_concept_figure_runtime_key "PI_CODING_AGENT_PROVIDER"
-      add_concept_figure_runtime_key "PI_CODING_AGENT_MODEL"
-      add_concept_figure_runtime_key "PI_CODING_AGENT_MODELS"
-      case "$(concept_figure_setting PI_CODING_AGENT_PROVIDER amazon-bedrock)" in
-        amazon-bedrock|bedrock) add_concept_figure_aws_credentials ;;
-        openai) add_concept_figure_secret_key "OPENAI_API_KEY" ;;
-        gemini|google) add_concept_figure_secret_key "GEMINI_API_KEY" ;;
-        anthropic) add_concept_figure_secret_key "ANTHROPIC_API_KEY" ;;
-      esac
-      ;;
-  esac
-
+  CONCEPT_FIGURE_SEED_AGENT_AUTH=0
   CONCEPT_FIGURE_IMAGE_RUNTIME_KEYS="SSL_CERT_FILE SSL_CERT_DIR REQUESTS_CA_BUNDLE CURL_CA_BUNDLE NODE_EXTRA_CA_CERTS VENV_PY AUTOILLUSTRATE_PYTHON AUTOILLUSTRATE_CHROME AUTOILLUSTRATE_PRICE_FILE AUTOILLUSTRATE_HEADLESS_BIN"
   CONCEPT_FIGURE_SAFE_SETTING_KEYS="AUTOILLUSTRATE_CMD_TIMEOUT AUTOILLUSTRATE_SKIP_DRAWIO_SMOKE"
-  CONCEPT_FIGURE_ALLOWED_ENV_KEYS="${CONCEPT_FIGURE_SECRET_KEYS}${CONCEPT_FIGURE_RUNTIME_CONFIG_KEYS:+ ${CONCEPT_FIGURE_RUNTIME_CONFIG_KEYS}} ${CONCEPT_FIGURE_SAFE_SETTING_KEYS}"
+  CONCEPT_FIGURE_ALLOWED_ENV_KEYS="$CONCEPT_FIGURE_SAFE_SETTING_KEYS"
   CONCEPT_FIGURE_RUNTIME_KEYS="HOME PATH USER LOGNAME SHELL TMPDIR TMP TEMP LANG LANGUAGE LC_ALL LC_CTYPE TERM COLORTERM ${CONCEPT_FIGURE_IMAGE_RUNTIME_KEYS} ${CONCEPT_FIGURE_ALLOWED_ENV_KEYS}"
-  CONCEPT_FIGURE_ENV_COMMANDS="for concept_env_key in \$(compgen -e); do case \" ${CONCEPT_FIGURE_RUNTIME_KEYS} \" in *\" \${concept_env_key} \"*) ;; *) unset \"\${concept_env_key}\" ;; esac; done; unset concept_env_key"
+  CONCEPT_FIGURE_ENV_COMMANDS=":"
 }
 
 # Autoillustrate's own agent-model default moves between releases (0.4.4 switched
@@ -702,6 +649,9 @@ build_concept_figure_command() {
   local concept_model="${AGENT_MODEL:-}"
   if [ -z "$concept_model" ]; then
     concept_model="$(concept_figure_default_model "$AGENT")"
+  fi
+  if [ "$AGENT" = pi ] || [ "$AGENT" = opencode ]; then
+    concept_model="configured/$concept_model"
   fi
   if [ -n "$concept_model" ]; then
     printf -v model_flag ' --model %q' "$concept_model"
@@ -1236,7 +1186,7 @@ PY
     return 0
   fi
 
-  select_concept_figure_backend
+  select_concept_figure_backend || return $?
   if ! prepare_concept_figure_sandbox; then
     rm -f -- "$instructions_path"
     cleanup_concept_figure_render_workspace

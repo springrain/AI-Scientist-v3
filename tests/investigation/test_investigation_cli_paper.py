@@ -403,7 +403,7 @@ def test_run_paper_generation_final_ai_review_completed_failed_repo_env_and_defa
 # ---------------------------------------------------------------------------
 
 
-def test_autoillustrate_is_not_vendored_and_image_pins_release_and_toolchain() -> None:
+def test_autoillustrate_is_not_vendored_and_image_installs_release_and_toolchain() -> None:
     # autoillustrate is not vendored as a submodule
     assert not Path(".gitmodules").exists()
     assert not Path("src/agents/skills/generate-concept-figure/drawio-figure").exists()
@@ -419,15 +419,17 @@ def test_autoillustrate_is_not_vendored_and_image_pins_release_and_toolchain() -
     # the agent image installs the pinned autoillustrate release and toolchain
     assert "drawio-figure" not in dockerfile_text
     assert "--json --usage" not in dockerfile_text
+    assert "DRAWIO_SHA256" not in dockerfile_text
+    assert "sha256sum" not in dockerfile_text
     for fragment in (
         "ARG AUTOILLUSTRATE_VERSION=0.4.8",
         "ARG AUTOILLUSTRATE_HOME=/usr/local/lib/node_modules/autoillustrate",
         'npm install -g "autoillustrate@${AUTOILLUSTRATE_VERSION}"',
-        "@openai/codex@0.153.4",
-        # Autoillustrate >= 0.4.4 defaults to claude-opus-5-5, unsupported before 2.1.280.
-        "@anthropic-ai/claude-code@2.1.285",
-        "@earendil-works/pi-coding-agent@0.85.1",
-        "opencode-ai@1.18.29",
+        "@openai/codex",
+        "@anthropic-ai/claude-code",
+        "@google/gemini-cli",
+        "@earendil-works/pi-coding-agent",
+        "opencode-ai",
         '-r "$AUTOILLUSTRATE_HOME/requirements.txt"',
         'test -r "$AUTOILLUSTRATE_HOME/prompts/phase1.md"',
         'test -r "$AUTOILLUSTRATE_HOME/scripts/compose.py"',
@@ -445,12 +447,11 @@ def test_autoillustrate_is_not_vendored_and_image_pins_release_and_toolchain() -
         "ENV AUTOILLUSTRATE_CHROME=/usr/bin/chromium",
         "ENV VENV_PY=/opt/autoillustrate-venv/bin/python",
         "ARG TARGETARCH",
-        "ARG DRAWIO_SHA256_AMD64=cb44a6770c7dcaef9adbf370beb365b740bde8c4c6e2de9d7a56824cd9ea49af",
-        "ARG DRAWIO_SHA256_ARM64=cd57f501853846834a7f10f85c39ab5217f4aeb71320f309ccc5b02dcabfaa83",
+        "ARG DRAWIO_VERSION=32.7.4",
         'drawio_arch="${TARGETARCH:-$(dpkg --print-architecture)}"',
         "drawio-${drawio_arch}-${DRAWIO_VERSION}.deb",
-        'echo "${drawio_sha256}  /tmp/drawio.deb" | sha256sum -c -',
-        'pip install --no-cache-dir "scholarly==1.7.11" "httpx==0.27.2"',
+        'if [ -s "$drawio_cache" ]; then',
+        'pip install "scholarly==1.7.11" "httpx==0.27.2"',
     ):
         assert fragment in dockerfile_text, fragment
     assert dockerfile_text.count('test "$(autoillustrate --version)" = "$AUTOILLUSTRATE_VERSION"') == 2

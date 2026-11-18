@@ -134,8 +134,8 @@ class PipelineContainerConfig(ContainerConfig):
         metadata={"help": "Docker network mode; the post-hoc phase uses its own narrower network"},
     )
     env_file: str = field(
-        default=".env",
-        metadata={"help": "Path to the .env file mounted into the container"},
+        default="",
+        metadata={"help": "Legacy env file; model agents read configs/models.local.yaml"},
     )
     gpu_count: int = field(
         default=0,

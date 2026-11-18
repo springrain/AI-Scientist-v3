@@ -2244,7 +2244,12 @@ def load_pipeline_config(overrides: list[str] | None = None) -> PipelineConfig:
     sections = {spec.name: getattr(schema, spec.name) for spec in dataclasses.fields(PipelineConfig)}
     for name, phase_cls in PHASE_CLASSES.items():
         sections[name] = phase_cls(flatten_mapping(sections[name]))
-    return PipelineConfig(**sections)
+    cfg = PipelineConfig(**sections)
+    from src.model_config import bind_agent_config
+
+    bind_agent_config(cfg.agent)
+    cfg.container.env_file = ""
+    return cfg
 
 
 def config_error_message(exc: BaseException) -> str:

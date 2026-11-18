@@ -3,10 +3,10 @@
 The command wraps ``src/aireview.py``, the same PEP 723 ``uv`` script the
 pipeline's final AI review phase runs, without touching paper manifests or
 cost ledgers: it validates the PDF, builds the reviewer's restricted
-environment (only OpenAI settings are loaded from the repo ``.env`` or
-``--env-file``), and executes ``uv run --script src/aireview.py <pdf>`` with
+runtime environment, and executes ``uv run --script src/aireview.py <pdf>`` with
 inherited standard streams. The reviewer prints the review JSON itself and
-``--output`` additionally writes it to a file.
+``--output`` additionally writes it to a file. Models and credentials are read
+from ``configs/models.local.yaml``.
 
 The ``uv`` lookup and the subprocess runner are injectable so the command is
 testable without ``uv`` or the network. Messages never print secret values,
@@ -51,8 +51,7 @@ def _parser() -> argparse.ArgumentParser:
         prog="agsci review",
         description=(
             "Review a paper PDF with the standalone OpenAI-backed reviewer "
-            "(src/aireview.py). Requires uv and OPENAI_API_KEY in the environment "
-            "or in the repo .env / --env-file."
+            "(src/aireview.py). Requires uv and review settings in configs/models.local.yaml."
         ),
     )
     parser.add_argument("pdf", type=Path, help="paper PDF to review")
@@ -62,13 +61,6 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PATH",
         help="also write the review JSON to this file (it is always printed to stdout)",
-    )
-    parser.add_argument(
-        "--env-file",
-        type=Path,
-        default=None,
-        metavar="PATH",
-        help="env file to load OpenAI settings from (default: <repo>/.env when it exists)",
     )
     return parser
 
@@ -88,25 +80,16 @@ def main(
         print(f"agsci review: not a regular file: {pdf_path}", file=sys.stderr)
         return 2
 
-    env_file: Path | None = args.env_file
-    if env_file is None:
-        default_env_file = repo_root / ".env"
-        if default_env_file.is_file():
-            env_file = default_env_file
-    elif not env_file.is_file():
-        print(f"agsci review: env file not found: {env_file}", file=sys.stderr)
-        return 2
+    from src.model_config import load_settings, validate_connection
+
+    try:
+        validate_connection(load_settings()["review"])
+    except (OSError, ValueError) as exc:
+        print(f"agsci review: {exc}", file=sys.stderr)
+        return 1
 
     source = os.environ if environ is None else environ
-    environment = final_ai_review_environment(source, env_file=env_file)
-    if not environment.get("OPENAI_API_KEY"):
-        where = f" or in {env_file}" if env_file is not None else ""
-        print(
-            "agsci review: OPENAI_API_KEY is not set in the environment"
-            f"{where}; export it or pass --env-file",
-            file=sys.stderr,
-        )
-        return 1
+    environment = final_ai_review_environment(source)
 
     uv = which("uv")
     if uv is None:
