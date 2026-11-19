@@ -19,6 +19,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from literature_credentials import load_literature_settings
 
 BASE_URL = "https://api.semanticscholar.org/graph/v1"
+_DISABLED_MESSAGE = (
+    "Semantic Scholar is disabled: literature.s2_api_key is empty; use OpenAlex instead"
+)
 KEY_RE = re.compile(r"@\w+\{([^,]+),")
 def utc_now() -> str:
     """Return the current UTC timestamp string."""
@@ -27,6 +30,8 @@ def utc_now() -> str:
 
 def http_json(url: str, *, timeout: int, api_key: str | None) -> dict[str, Any]:
     """Handle http json logic for this module."""
+    if not api_key or not api_key.strip():
+        raise SystemExit(_DISABLED_MESSAGE)
     max_attempts = 5
     for attempt in range(1, max_attempts + 1):
         req = urllib.request.Request(
@@ -138,6 +143,8 @@ def main() -> int:
         raise SystemExit("--timeout-seconds must be > 0")
 
     api_key = load_literature_settings()["s2_api_key"].strip() or None
+    if api_key is None:
+        raise SystemExit(_DISABLED_MESSAGE)
     queries = normalize_queries(list(args.query))
     if not queries:
         raise SystemExit("At least one non-empty --query is required.")

@@ -362,7 +362,7 @@ def main() -> int:
                 raise ValueError("stage requires --directory")
             stage_runtime(args.directory, figures=args.figures, literature=args.literature)
         elif args.action == "literature-status":
-            s2_status = "keyed" if data["literature"]["s2_api_key"].strip() else "anonymous"
+            s2_status = "keyed" if data["literature"]["s2_api_key"].strip() else "disabled"
             if data["literature"]["openalex_api_key"].strip():
                 openalex_status = "keyed"
             elif data["literature"]["openalex_email"].strip():

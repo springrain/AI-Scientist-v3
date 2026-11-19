@@ -11,7 +11,7 @@ import time
 import urllib.error
 from email.message import Message
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -365,7 +365,7 @@ def test_semantic_scholar_helpers_progress_bibtex_key_forbidden_error_and_retry(
             "src.orchestrator.semantic_scholar.urllib.request.urlopen", side_effect=[http_error, response]
         ) as urlopen_mock,
     ):
-        payload = s2._read_json("https://example.test", api_key=None, timeout_seconds=5)
+        payload = s2._read_json("https://example.test", api_key="demo-key", timeout_seconds=5)
 
     assert payload == {"data": []}
     assert urlopen_mock.call_count == 2
@@ -394,7 +394,9 @@ def test_retrieve_bibtex_entries_dedupes_stops_early_logs_progress_and_fails_whe
         )
 
     with patch.object(s2, "search_papers", side_effect=_search), patch.object(s2, "fetch_paper", side_effect=_fetch):
-        refs, provenance = s2.retrieve_bibtex_entries(queries=["query one"], min_refs=1, max_refs=3)
+        refs, provenance = s2.retrieve_bibtex_entries(
+            queries=["query one"], min_refs=1, max_refs=3, api_key="demo-key"
+        )
 
     assert len(refs) == 1
     assert len(provenance) == 1
@@ -412,7 +414,9 @@ def test_retrieve_bibtex_entries_dedupes_stops_early_logs_progress_and_fails_whe
         pytest.fail(f"Unexpected later query: {query}")
 
     with patch.object(s2, "search_papers", side_effect=_search_early), patch.object(s2, "fetch_paper", side_effect=_s2_fetch):
-        refs, provenance = s2.retrieve_bibtex_entries(queries=["query one", "query two"], min_refs=2, max_refs=2)
+        refs, provenance = s2.retrieve_bibtex_entries(
+            queries=["query one", "query two"], min_refs=2, max_refs=2, api_key="demo-key"
+        )
 
     assert search_calls == ["query one"]
     assert len(refs) == 2
@@ -427,7 +431,9 @@ def test_retrieve_bibtex_entries_dedupes_stops_early_logs_progress_and_fails_whe
         patch.object(s2, "search_papers", return_value=results),
         patch.object(s2, "fetch_paper", side_effect=_s2_fetch),
     ):
-        refs, provenance = s2.retrieve_bibtex_entries(queries=["query one"], min_refs=2, max_refs=2)
+        refs, provenance = s2.retrieve_bibtex_entries(
+            queries=["query one"], min_refs=2, max_refs=2, api_key="demo-key"
+        )
 
     assert len(refs) == 2
     assert len(provenance) == 2
@@ -442,14 +448,82 @@ def test_retrieve_bibtex_entries_dedupes_stops_early_logs_progress_and_fails_whe
         patch.object(s2, "BUILTIN_REFERENCE_CATALOG", []),
         pytest.raises(s2.SemanticScholarError),
     ):
-        s2.retrieve_bibtex_entries(queries=["one"], min_refs=1, max_refs=2)
+        s2.retrieve_bibtex_entries(queries=["one"], min_refs=1, max_refs=2, api_key="demo-key")
 
     # fails on rate limit without injecting the builtin catalog
     with (
         patch.object(s2, "search_papers", side_effect=s2.SemanticScholarError("Semantic Scholar HTTP 429")),
         pytest.raises(s2.SemanticScholarError),
     ):
-        s2.retrieve_bibtex_entries(queries=["rate limited query"], min_refs=3, max_refs=3)
+        s2.retrieve_bibtex_entries(
+            queries=["rate limited query"], min_refs=3, max_refs=3, api_key="demo-key"
+        )
+
+
+@pytest.mark.parametrize("api_key", [None, "", " \t "])
+def test_semantic_scholar_request_helpers_reject_empty_keys_without_network(api_key) -> None:
+    standalone = _load_script_module("s2_fetch")
+    with patch.object(s2.urllib.request, "urlopen") as request:
+        with pytest.raises(s2.SemanticScholarError, match="s2_api_key is empty"):
+            s2.search_papers("packing", limit=1, api_key=api_key, timeout_seconds=1)
+        with pytest.raises(s2.SemanticScholarError, match="s2_api_key is empty"):
+            s2.fetch_paper("paper", api_key=api_key, timeout_seconds=1)
+        with pytest.raises(SystemExit, match="s2_api_key is empty"):
+            standalone.search("packing", limit=1, timeout=1, api_key=api_key)
+        with pytest.raises(SystemExit, match="s2_api_key is empty"):
+            standalone.details("paper", timeout=1, api_key=api_key)
+    request.assert_not_called()
+
+
+@pytest.mark.parametrize("script_name", ["paper.sh", "paper_edit.sh"])
+def test_paper_retrieval_falls_back_to_openalex_when_semantic_scholar_is_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys, script_name: str,
+) -> None:
+    repo_root = SKILL_SCRIPTS.parents[4]
+    script = (repo_root / "src/scripts" / script_name).read_text(encoding="utf-8")
+    start = script.index("<<'PY'\n", script.index("\nretrieve_references_from_plan() {"))
+    start += len("<<'PY'\n")
+    retrieval_code = script[start:script.index("\nPY\n", start)]
+    plan = tmp_path / "reference_query_plan.json"
+    plan.write_text(json.dumps({
+        "status": "ready", "central_topic": "Circle packing",
+        "queries": [_query("unequal circle packing")],
+    }), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [
+        "-", str(repo_root), *([str(tmp_path)] * 5), "1", "2", "default",
+        str(plan), "", "disabled", "", "", "", "qualified_only",
+    ])
+    paper_data = ModuleType("src.orchestrator.paper_data")
+    monkeypatch.setattr(paper_data, "FinalEvaluationMode", str, raising=False)
+    monkeypatch.setattr(paper_data, "build_paper_data", lambda *a, **k: {}, raising=False)
+    monkeypatch.setitem(sys.modules, "src.orchestrator.paper_data", paper_data)
+    monkeypatch.setattr("src.model_config.load_literature_settings", lambda: {"s2_api_key": ""})
+
+    def run_openalex(command, **kwargs):
+        assert Path(command[1]).name == "openalex_fetch.py"
+        (tmp_path / "references.openalex.bib").write_text(
+            "@article{Packing2025,\n title={Circle packing}\n}\n", encoding="utf-8"
+        )
+        (tmp_path / "references.openalex.json").write_text(json.dumps({
+            "references": [{"id": "ref.openalex.W1", "citation_key": "Packing2025"}],
+        }), encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    with (
+        patch.object(s2.urllib.request, "urlopen") as request,
+        patch.object(s2, "search_papers") as search,
+        patch.object(s2.time, "sleep") as sleep,
+        patch("subprocess.run", side_effect=run_openalex) as fallback,
+    ):
+        exec(compile(retrieval_code, script_name, "exec"), {})
+    request.assert_not_called()
+    search.assert_not_called()
+    sleep.assert_not_called()
+    fallback.assert_called_once()
+    assert "Packing2025" in (tmp_path / "references.bib").read_text(encoding="utf-8")
+    output = capsys.readouterr().err
+    assert "attempting OpenAlex fallback: Semantic Scholar is disabled" in output
+    assert "search start" not in output
 
 
 def test_reference_outputs_exist_requires_both_files_and_write_bibtex_file_writes_entries(tmp_path: Path) -> None:

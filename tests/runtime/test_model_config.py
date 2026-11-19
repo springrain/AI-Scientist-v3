@@ -13,6 +13,7 @@ import sys
 import tomllib
 from types import SimpleNamespace
 import urllib.parse
+from unittest.mock import Mock
 
 import pytest
 import yaml
@@ -280,6 +281,42 @@ def test_host_literature_keys_ignore_ambient_credentials(
     settings["literature"]["s2_api_key"] = ""
     model_config.DEFAULT_CONFIG.write_text(yaml.safe_dump(settings), encoding="utf-8")
     assert resolve_s2_api_key() is None
+
+
+@pytest.mark.parametrize("api_key", ["", " \t "])
+def test_empty_s2_key_skips_host_and_standalone_retrieval(
+    settings: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys, api_key: str,
+) -> None:
+    from src.orchestrator import semantic_scholar
+
+    settings["literature"]["s2_api_key"] = api_key
+    model_config.DEFAULT_CONFIG.write_text(yaml.safe_dump(settings), encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("S2_API_KEY", "ambient-key-must-not-enable-requests")
+    request = Mock()
+    sleep = Mock()
+    monkeypatch.setattr(semantic_scholar.urllib.request, "urlopen", request)
+    monkeypatch.setattr(semantic_scholar.time, "sleep", sleep)
+    assert semantic_scholar.semantic_scholar_key_forbidden_error("packing") is None
+    with pytest.raises(semantic_scholar.SemanticScholarError, match="s2_api_key is empty"):
+        semantic_scholar.retrieve_bibtex_entries(queries=["packing"], min_refs=1, max_refs=2)
+    standalone = _reference_script("s2_fetch")
+    out_bib = tmp_path / "references.bib"
+    out_json = tmp_path / "references.json"
+    monkeypatch.setattr(sys, "argv", [
+        "s2_fetch", "--query", "packing", "--out-bib", str(out_bib), "--out-json", str(out_json),
+    ])
+    with pytest.raises(SystemExit, match="s2_api_key is empty"):
+        standalone.main()
+    assert not out_bib.exists() and not out_json.exists()
+    request.assert_not_called()
+    sleep.assert_not_called()
+    monkeypatch.setattr(sys, "argv", ["model_config.py", "literature-status"])
+    assert model_config.main() == 0
+    output = capsys.readouterr()
+    assert output.out == "semantic_scholar=disabled openalex=keyed\n"
+    assert "search start" not in output.err
 
 
 @pytest.mark.parametrize("api_key", ["openalex-secret+&=?", "", "  "])

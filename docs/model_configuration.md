@@ -85,6 +85,11 @@ literature:
   openalex_base_url: https://api.openalex.org/works
 ```
 
+An empty or whitespace-only `s2_api_key` disables Semantic Scholar requests,
+including its health check. Paper generation and revision skip directly to
+OpenAlex; the standalone `s2_fetch.py` exits with a disabled-service message
+without making a request. Set a non-empty key to enable Semantic Scholar.
+
 `openalex_base_url` is the full search endpoint, normally
 `https://api.openalex.org/works`. The retriever uses this URL directly without
 appending a path and sends a non-empty `openalex_api_key` as the `api_key` query

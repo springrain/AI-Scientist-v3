@@ -12,7 +12,7 @@ Fetch references from Semantic Scholar Graph API, OpenAlex, or Google Scholar (v
 
 # What to do
 1. Build focused search queries from task goal, method names, and top experiment ideas.
-2. Preferred path (Semantic Scholar Graph API):
+2. Preferred path when `literature.s2_api_key` is non-empty (Semantic Scholar Graph API). If the key is empty or whitespace, skip this service and use OpenAlex directly:
 ```bash
 python scripts/s2_fetch.py \
   --query "query one" \
@@ -56,11 +56,11 @@ python scripts/scholarly_fetch.py \
    - `--proxy-http <url>` / `--proxy-https <url>` for `single`
    - Env fallbacks: `SCHOLARLY_PROXY_MODE`, `SCHOLARLY_PROXY_HTTP`, `SCHOLARLY_PROXY_HTTPS`
    - Global `HTTP_PROXY` / `HTTPS_PROXY` are intentionally ignored to avoid accidental ambient proxying
-5. `s2_fetch.py` uses `literature.s2_api_key` from `configs/models.local.yaml` (or the private copy staged by the paper launcher). Do not set credentials through environment variables.
+5. `s2_fetch.py` uses `literature.s2_api_key` from `configs/models.local.yaml` (or the private copy staged by the paper launcher). An empty or whitespace-only key disables Semantic Scholar; the script exits without making a request. Do not set credentials through environment variables.
 6. Keep only references with valid BibTeX and citation key.
 7. Dedupe by citation key and paper id.
 8. Fail hard if references found `< min-refs`.
-9. Use `s2_fetch.py` first for stability, `openalex_fetch.py` as the next fallback, and `scholarly_fetch.py` last if the other sources fail.
+9. Use `s2_fetch.py` first when its key is configured, `openalex_fetch.py` next (or first when Semantic Scholar is disabled), and `scholarly_fetch.py` last if the other enabled sources fail.
 
 # Outputs
 - `references.bib`

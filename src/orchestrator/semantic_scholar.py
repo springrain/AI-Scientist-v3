@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 SEMANTIC_SCHOLAR_GRAPH_API = "https://api.semanticscholar.org/graph/v1"
+_DISABLED_MESSAGE = "Semantic Scholar is disabled: literature.s2_api_key is empty"
 CITATION_KEY_RE = re.compile(r"@\w+\{([^,]+),")
 BUILTIN_REFERENCE_CATALOG: list[dict[str, Any]] = [
     {
@@ -284,6 +285,8 @@ def _log_reference_progress(**kwargs: Any) -> None:
 
 def _read_json(url: str, *, api_key: str | None, timeout_seconds: int) -> dict[str, Any]:
     """Read JSON data from disk when available."""
+    if not api_key or not api_key.strip():
+        raise SemanticScholarError(_DISABLED_MESSAGE)
     max_attempts = 5
     for attempt in range(1, max_attempts + 1):
         req = urllib.request.Request(
@@ -458,6 +461,8 @@ def retrieve_bibtex_entries(
         raise ValueError("search_limit_per_query must be > 0")
 
     resolved_api_key = resolve_s2_api_key(api_key)
+    if resolved_api_key is None:
+        raise SemanticScholarError(_DISABLED_MESSAGE)
     normalized_queries = _normalize_queries(queries)
     target_refs = min_refs
     total_queries = len(normalized_queries)
