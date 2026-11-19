@@ -53,7 +53,7 @@ paper_format: iclr
 paper_profile: default
 paper_min_refs: 8
 paper_max_refs: 15
-paper_max_repair_rounds: 10
+paper_max_repair_rounds: 5
 paper_review_rounds: 0
 standalone_paper: false          # paper.sh shorthand for --paper-profile standalone --two-stage
 two_stage: false
